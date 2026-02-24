@@ -24,12 +24,12 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
 #include "../common/logging.h"
 #include "../common/types.h"
 #include "ipc_protocol.h"
+#include <sys/stat.h>
 
 
 #include <dlfcn.h>
@@ -86,7 +86,7 @@ static aegis_node_type_t elect_node(void) {
 
   /* Create the lock file's parent directory */
   char lock_dir[512];
-  strncpy(lock_dir, lock_path, sizeof(lock_dir) - 1);
+  snprintf(lock_dir, sizeof(lock_dir), "%s", lock_path);
   char *slash = strrchr(lock_dir, '/');
   if (slash) {
     *slash = '\0';
@@ -107,9 +107,9 @@ static aegis_node_type_t elect_node(void) {
     /* Write our PID to the lock file for identification */
     char pid_str[32];
     int n = snprintf(pid_str, sizeof(pid_str), "%d\n", (int)getpid());
-    ftruncate(g_lock_fd, 0);
+    if (ftruncate(g_lock_fd, 0) < 0) {}
     lseek(g_lock_fd, 0, SEEK_SET);
-    write(g_lock_fd, pid_str, n);
+    if (write(g_lock_fd, pid_str, n) < 0) {}
     return NODE_ALPHA;
   }
 
@@ -211,7 +211,7 @@ static void auditor_cleanup(void) {
  * la_version — Called first.  We return the audit interface version
  * we support (LAV_CURRENT) and receive a pointer to the audit cookie.
  */
-unsigned int la_version(unsigned int version) {
+unsigned int la_version(unsigned int version) { (void)version;
   /*
    * Trigger one-time initialization on the very first la_version call.
    * This happens before any shared object is loaded, giving us
@@ -229,7 +229,7 @@ unsigned int la_version(unsigned int version) {
  *   LA_FLG_BINDTO   — audit symbol bindings TO this object
  *   LA_FLG_BINDFROM — audit symbol bindings FROM this object
  */
-unsigned int la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) {
+unsigned int la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) { (void)cookie;
   if (!g_initialized || !g_log)
     return 0;
 
@@ -267,7 +267,7 @@ unsigned int la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) {
  */
 uintptr_t la_symbind64(Elf64_Sym *sym, unsigned int ndx, uintptr_t *refcook,
                        uintptr_t *defcook, unsigned int *flags,
-                       const char *symname) {
+                       const char *symname) { (void)ndx; (void)refcook; (void)defcook; (void)flags;
   if (!g_initialized || !symname)
     return sym->st_value;
 
@@ -306,7 +306,7 @@ uintptr_t la_symbind64(Elf64_Sym *sym, unsigned int ndx, uintptr_t *refcook,
  * main() is called.  This is our window to perform any setup that
  * requires all libraries to be present.
  */
-void la_preinit(uintptr_t *cookie) {
+void la_preinit(uintptr_t *cookie) { (void)cookie;
   if (!g_initialized)
     return;
 
@@ -320,7 +320,7 @@ void la_preinit(uintptr_t *cookie) {
  * la_activity — Called when the linker's state changes.
  * flag values: LA_ACT_CONSISTENT, LA_ACT_ADD, LA_ACT_DELETE
  */
-void la_activity(uintptr_t *cookie, unsigned int flag) {
+void la_activity(uintptr_t *cookie, unsigned int flag) { (void)cookie;
   if (!g_initialized || !g_log)
     return;
 

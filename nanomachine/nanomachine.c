@@ -26,11 +26,12 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../common/config.h"
 #include "../common/logging.h"
 #include "../common/types.h"
 #include "opcodes.h"
+#include <dlfcn.h>
+#include <sched.h>
 #include "vault.h"
 
 
@@ -418,7 +419,7 @@ static aegis_result_t dispatch_instruction(nano_ctx_t *ctx,
       iv[3] = (uint8_t)(ctx->ip);
 
       /* For research: just copy (production: full decrypt) */
-      memcpy(decrypted, operand, dec_len);
+      (void)iv; memcpy(decrypted, operand, dec_len);
       rc = execute_chunk(ctx, decrypted, dec_len);
       AEGIS_WIPE(decrypted, dec_len, 1);
       free(decrypted);

