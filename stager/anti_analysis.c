@@ -16,7 +16,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "anti_analysis.h"
 #include "../common/config.h"
 
@@ -194,7 +193,7 @@ aegis_result_t aegis_aa_check_hostile_procs(void) {
     if (entry->d_name[0] < '0' || entry->d_name[0] > '9')
       continue;
 
-    char comm_path[128];
+    char comm_path[300];
     snprintf(comm_path, sizeof(comm_path), "/proc/%s/comm", entry->d_name);
 
     char comm[256] = {0};

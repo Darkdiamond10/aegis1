@@ -7,7 +7,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "vault.h"
 #include "../common/config.h"
 #include "../common/logging.h"

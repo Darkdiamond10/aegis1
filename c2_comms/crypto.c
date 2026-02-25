@@ -13,7 +13,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "crypto.h"
 #include "../common/logging.h"
 

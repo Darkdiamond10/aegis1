@@ -26,7 +26,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../common/config.h"
 #include "../common/logging.h"
 #include "../common/types.h"
@@ -40,6 +39,8 @@
 #include <sys/mman.h>
 #include <time.h>
 #include <unistd.h>
+#include <dlfcn.h>
+#include <sched.h>
 
 
 /* ── Internal: RDTSC for cycle counting ──────────────────────────────────── */
@@ -411,11 +412,11 @@ static aegis_result_t dispatch_instruction(nano_ctx_t *ctx,
       if (!decrypted)
         return AEGIS_ERR_ALLOC;
       /* Decrypt using chunk IV derived from IP */
-      uint8_t iv[AEGIS_GCM_IV_BYTES] = {0};
+      /* uint8_t iv[AEGIS_GCM_IV_BYTES] = {0};
       iv[0] = (uint8_t)(ctx->ip >> 24);
       iv[1] = (uint8_t)(ctx->ip >> 16);
       iv[2] = (uint8_t)(ctx->ip >> 8);
-      iv[3] = (uint8_t)(ctx->ip);
+      iv[3] = (uint8_t)(ctx->ip); */
 
       /* For research: just copy (production: full decrypt) */
       memcpy(decrypted, operand, dec_len);
