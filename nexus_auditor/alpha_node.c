@@ -20,12 +20,13 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
 #include "../common/logging.h"
 #include "../common/types.h"
 #include "ipc_protocol.h"
+#include <sys/stat.h>
+#include <fcntl.h>
 
 
 #include <dirent.h>
@@ -82,7 +83,7 @@ static aegis_result_t create_ipc_socket(void) {
   struct sockaddr_un addr;
   memset(&addr, 0, sizeof(addr));
   addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, g_sock_path, sizeof(addr.sun_path) - 1);
+  size_t path_len = strlen(g_sock_path); if (path_len >= sizeof(addr.sun_path)) return AEGIS_ERR_IPC; memcpy(addr.sun_path, g_sock_path, path_len + 1);
 
   if (bind(g_server_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
     close(g_server_fd);
@@ -386,7 +387,7 @@ static void *watchdog_thread(void *arg) {
       if (entry->d_name[0] < '0' || entry->d_name[0] > '9')
         continue;
 
-      char comm_path[128];
+      char comm_path[512];
       snprintf(comm_path, sizeof(comm_path), "/proc/%s/comm", entry->d_name);
 
       char comm[256] = {0};

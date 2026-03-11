@@ -18,7 +18,6 @@
  * ============================================================================
  */
 
-#define _GNU_SOURCE
 #include "../c2_comms/crypto.h"
 #include "../common/config.h"
 #include "../common/logging.h"
@@ -106,7 +105,7 @@ static aegis_result_t connect_to_alpha(void) {
   struct sockaddr_un addr;
   memset(&addr, 0, sizeof(addr));
   addr.sun_family = AF_UNIX;
-  strncpy(addr.sun_path, sock_path, sizeof(addr.sun_path) - 1);
+  snprintf(addr.sun_path, sizeof(addr.sun_path), "%s", sock_path);
 
   if (connect(g_client_fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
     close(g_client_fd);

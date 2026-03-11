@@ -20,6 +20,7 @@
 #define AEGIS_VAULT_H
 
 #include "../c2_comms/crypto.h"
+#include "../common/logging.h"
 #include "../common/types.h"
 
 

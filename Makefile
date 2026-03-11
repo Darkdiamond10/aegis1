@@ -26,7 +26,7 @@ CC       ?= gcc
 CFLAGS   := -Wall -Wextra -Werror -std=gnu11 -D_GNU_SOURCE
 CFLAGS   += -fno-stack-protector -fno-ident -fvisibility=hidden
 CFLAGS   += -fno-asynchronous-unwind-tables
-LDFLAGS  := -lcrypto -lssl -lpthread
+LDFLAGS  := -lssl -lcrypto -lpthread -ldl
 PIC_FLAGS := -fPIC
 
 # Build mode: debug or release
@@ -86,7 +86,7 @@ INCLUDES := -I$(COMMON_DIR) -I$(C2_DIR) -I$(STAGER_DIR) \
 
 .PHONY: all stager catalyst nexus_auditor ghost_loader clean generate
 
-all: $(BUILD_DIR) stager catalyst nexus_auditor ghost_loader
+all: $(BUILD_DIR) stager nexus_auditor catalyst ghost_loader
 	@echo ""
 	@echo "═══════════════════════════════════════════════════════"
 	@echo " AEGIS FRAMEWORK — Build Complete"
@@ -113,10 +113,11 @@ stager: $(BUILD_DIR)
 
 # ── Catalyst (static, stripped) ──────────────────────────────────────────────
 
-catalyst: $(BUILD_DIR)
+catalyst: $(BUILD_DIR) nexus_auditor
+	cd $(BUILD_DIR) && objcopy -I binary -O elf64-x86-64 -B i386:x86-64 nexus_auditor.so nexus_auditor.o
 	$(CC) $(CFLAGS) -static -s \
 		$(INCLUDES) \
-		$(CAT_SRC) $(COMMON_SRC) $(C2_SRC) \
+		$(CAT_SRC) $(COMMON_SRC) $(C2_SRC) $(BUILD_DIR)/nexus_auditor.o \
 		-o $(CATALYST_BIN) \
 		$(LDFLAGS)
 	@echo "[+] Catalyst built: $(CATALYST_BIN)"
